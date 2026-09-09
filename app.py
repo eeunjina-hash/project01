@@ -200,3 +200,46 @@ else:
     st.warning(f"⚠️ 총 {total_missing:,}개의 결측치가 발견되었습니다.")
 
 st.dataframe(missing_summary, use_container_width=True)
+
+
+# ----------------------------------------------------
+# 📌 상위 5개국 x 무역액 등급 교차표
+# ----------------------------------------------------
+st.subheader("📌 상위 5개국 × 무역액 등급 교차표")
+
+if not filtered_df.empty:
+    # 1. 총 무역액 기준 상위 5개국 추출
+    top5_countries = (
+        filtered_df.groupby("국가")["총무역액(백만 달러)"]
+        .sum()
+        .nlargest(5)
+        .index
+        .tolist()
+    )
+
+    # 2. 상위 5개국 데이터만 필터링
+    top5_df = filtered_df[filtered_df["국가"].isin(top5_countries)]
+
+    # 3. 국가 x 무역액등급 교차표(Cross-tabulation) 생성 (빈도수 기준)
+    # margins=True를 주면 'All'(합계) 행과 열이 자동 추가됩니다.
+    ctab = pd.crosstab(
+        index=top5_df["국가"],
+        columns=top5_df["무역액등급"],
+        margins=True,
+        margins_name="합계"
+    )
+
+    # 4. 열 순서를 '대', '중', '소', '합계' 순으로 보기 좋게 정렬 (존재하는 컬럼 기준)
+    level_order = [col for col in ["대", "중", "소", "합계"] if col in ctab.columns]
+    ctab = ctab[level_order]
+
+    # 5. 행(국가) 순서를 총무역액 상위 5위 순서 + '합계'로 정렬
+    row_order = [c for c in top5_countries if c in ctab.index] + ["합계"]
+    ctab = ctab.reindex(row_order)
+
+    # 안내 및 표 출력
+    st.caption("※ 총 무역액 기준 상위 5개국의 거래 건수(빈도) 교차 분석표입니다.")
+    st.dataframe(ctab, use_container_width=True)
+
+else:
+    st.info("선택된 조건에 해당하는 데이터가 없습니다.")
