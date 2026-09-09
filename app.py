@@ -169,3 +169,34 @@ st.divider()
 # 상세 데이터 테이블
 st.subheader("📋 필터링된 데이터 상세")
 st.dataframe(filtered_df, use_container_width=True)
+
+
+
+import streamlit as st
+import pandas as pd
+
+st.subheader(" BACI 데이터 결측치 현황")
+
+# 1. CSV 파일 로드
+df_baci = pd.read_csv("baci_85_sample.csv")
+
+# 2. 컬럼별 결측치 집계
+missing_count = df_baci.isnull().sum()
+missing_ratio = (missing_count / len(df_baci)) * 100
+
+missing_summary = pd.DataFrame({
+    "컬럼명": df_baci.columns,
+    "데이터 타입": df_baci.dtypes.astype(str).values,
+    "전체 행 수": len(df_baci),
+    "결측치 개수": missing_count.values,
+    "결측치 비율(%)": missing_ratio.round(2).values
+})
+
+# 3. 상태 알림 및 표 출력
+total_missing = missing_count.sum()
+if total_missing == 0:
+    st.success("✅ 결측치가 전혀 없는 완전한 데이터셋입니다 (총 결측치: 0개).")
+else:
+    st.warning(f"⚠️ 총 {total_missing:,}개의 결측치가 발견되었습니다.")
+
+st.dataframe(missing_summary, use_container_width=True)
