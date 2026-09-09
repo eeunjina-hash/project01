@@ -1,5 +1,3 @@
-# Auto detect text files and perform LF normalization
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -95,22 +93,33 @@ with kpi4:
 
 st.divider()
 
-# 시각화 영역
+# 시각화 영역 (히트맵 & 파이차트)
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📊 국가별 무역 규모")
+    st.subheader("📊 국가별 무역 규모 (히트맵)")
     if not filtered_df.empty:
-        country_group = filtered_df.groupby("국가")[["수출액(백만 달러)", "수입액(백만 달러)"]].sum().reset_index()
-        fig_bar = px.bar(
-            country_group,
-            x="국가",
-            y=["수출액(백만 달러)", "수입액(백만 달러)"],
-            barmode="group",
-            title="국가별 수출/수입 비교",
-            color_discrete_sequence=["#1f77b4", "#ff7f0e"]
+        country_group = (
+            filtered_df.groupby("국가")[["수출액(백만 달러)", "수입액(백만 달러)"]]
+            .sum()
+            .T
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        fig_heat = px.imshow(
+            country_group,
+            labels=dict(x="국가", y="구분", color="무역액 (백만 달러)"),
+            x=country_group.columns,
+            y=["수출액", "수입액"],
+            text_auto=True,
+            aspect="auto",
+            color_continuous_scale="Blues",
+            title="국가별 수출/수입 비교 히트맵"
+        )
+        fig_heat.update_layout(
+            xaxis_title="국가",
+            yaxis_title="구분",
+            height=400
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
     else:
         st.info("선택된 조건에 해당하는 데이터가 없습니다.")
 
@@ -125,27 +134,50 @@ with col2:
             category_orders={"무역액등급": ["대", "중", "소"]},
             hole=0.4
         )
+        fig_pie.update_layout(height=400)
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.info("선택된 조건에 해당하는 데이터가 없습니다.")
 
-# 상세 데이터 테이블
-st.subheader("📋 필터링된 데이터 상세")
-st.dataframe(filtered_df, use_container_width=True)
+st.divider()
 
-
-# ----------------------------------------------------
-# 🔍 결측치 현황 확인 영역
-# ----------------------------------------------------
-st.subheader("🔍 결측치(Missing Values) 현황")
-
+# 상위 5개국 x 무역액 등급 교차표
+st.subheader("📌 상위 5개국 × 무역액 등급 교차표")
 if not filtered_df.empty:
-    # 1. 컬럼별 결측치 수 및 비율 계산
+    top5_countries = (
+        filtered_df.groupby("국가")["총무역액(백만 달러)"]
+        .sum()
+        .nlargest(5)
+        .index
+        .tolist()
+    )
+    top5_df = filtered_df[filtered_df["국가"].isin(top5_countries)]
+    
+    ctab = pd.crosstab(
+        index=top5_df["국가"],
+        columns=top5_df["무역액등급"],
+        margins=True,
+        margins_name="합계"
+    )
+    level_order = [col for col in ["대", "중", "소", "합계"] if col in ctab.columns]
+    ctab = ctab[level_order]
+    row_order = [c for c in top5_countries if c in ctab.index] + ["합계"]
+    ctab = ctab.reindex(row_order)
+    
+    st.caption("※ 총 무역액 기준 상위 5개국의 거래 건수(빈도) 교차 분석표입니다.")
+    st.dataframe(ctab, use_container_width=True)
+else:
+    st.info("선택된 조건에 해당하는 데이터가 없습니다.")
+
+st.divider()
+
+# 결측치 현황 확인 영역
+st.subheader("🔍 결측치(Missing Values) 현황")
+if not filtered_df.empty:
     missing_count = filtered_df.isnull().sum()
     missing_ratio = (missing_count / len(filtered_df)) * 100
     dtypes = filtered_df.dtypes.astype(str)
 
-    # 2. 결측치 요약 데이터프레임 생성
     missing_df = pd.DataFrame({
         "컬럼명": filtered_df.columns,
         "데이터 타입": dtypes.values,
@@ -153,7 +185,6 @@ if not filtered_df.empty:
         "결측치 비율(%)": missing_ratio.round(2).values
     })
 
-    # 3. 요약 지표 표시 및 표 출력
     total_missing = missing_count.sum()
     if total_missing == 0:
         st.success("✅ 현재 필터링된 데이터에 결측치가 존재하지 않습니다.")
@@ -169,77 +200,3 @@ st.divider()
 # 상세 데이터 테이블
 st.subheader("📋 필터링된 데이터 상세")
 st.dataframe(filtered_df, use_container_width=True)
-
-
-
-import streamlit as st
-import pandas as pd
-
-st.subheader(" BACI 데이터 결측치 현황")
-
-# 1. CSV 파일 로드
-df_baci = pd.read_csv("baci_85_sample.csv")
-
-# 2. 컬럼별 결측치 집계
-missing_count = df_baci.isnull().sum()
-missing_ratio = (missing_count / len(df_baci)) * 100
-
-missing_summary = pd.DataFrame({
-    "컬럼명": df_baci.columns,
-    "데이터 타입": df_baci.dtypes.astype(str).values,
-    "전체 행 수": len(df_baci),
-    "결측치 개수": missing_count.values,
-    "결측치 비율(%)": missing_ratio.round(2).values
-})
-
-# 3. 상태 알림 및 표 출력
-total_missing = missing_count.sum()
-if total_missing == 0:
-    st.success("✅ 결측치가 전혀 없는 완전한 데이터셋입니다 (총 결측치: 0개).")
-else:
-    st.warning(f"⚠️ 총 {total_missing:,}개의 결측치가 발견되었습니다.")
-
-st.dataframe(missing_summary, use_container_width=True)
-
-
-# ----------------------------------------------------
-# 📌 상위 5개국 x 무역액 등급 교차표
-# ----------------------------------------------------
-st.subheader("📌 상위 5개국 × 무역액 등급 교차표")
-
-if not filtered_df.empty:
-    # 1. 총 무역액 기준 상위 5개국 추출
-    top5_countries = (
-        filtered_df.groupby("국가")["총무역액(백만 달러)"]
-        .sum()
-        .nlargest(5)
-        .index
-        .tolist()
-    )
-
-    # 2. 상위 5개국 데이터만 필터링
-    top5_df = filtered_df[filtered_df["국가"].isin(top5_countries)]
-
-    # 3. 국가 x 무역액등급 교차표(Cross-tabulation) 생성 (빈도수 기준)
-    # margins=True를 주면 'All'(합계) 행과 열이 자동 추가됩니다.
-    ctab = pd.crosstab(
-        index=top5_df["국가"],
-        columns=top5_df["무역액등급"],
-        margins=True,
-        margins_name="합계"
-    )
-
-    # 4. 열 순서를 '대', '중', '소', '합계' 순으로 보기 좋게 정렬 (존재하는 컬럼 기준)
-    level_order = [col for col in ["대", "중", "소", "합계"] if col in ctab.columns]
-    ctab = ctab[level_order]
-
-    # 5. 행(국가) 순서를 총무역액 상위 5위 순서 + '합계'로 정렬
-    row_order = [c for c in top5_countries if c in ctab.index] + ["합계"]
-    ctab = ctab.reindex(row_order)
-
-    # 안내 및 표 출력
-    st.caption("※ 총 무역액 기준 상위 5개국의 거래 건수(빈도) 교차 분석표입니다.")
-    st.dataframe(ctab, use_container_width=True)
-
-else:
-    st.info("선택된 조건에 해당하는 데이터가 없습니다.")
