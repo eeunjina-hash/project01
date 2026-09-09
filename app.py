@@ -132,3 +132,40 @@ with col2:
 # 상세 데이터 테이블
 st.subheader("📋 필터링된 데이터 상세")
 st.dataframe(filtered_df, use_container_width=True)
+
+
+# ----------------------------------------------------
+# 🔍 결측치 현황 확인 영역
+# ----------------------------------------------------
+st.subheader("🔍 결측치(Missing Values) 현황")
+
+if not filtered_df.empty:
+    # 1. 컬럼별 결측치 수 및 비율 계산
+    missing_count = filtered_df.isnull().sum()
+    missing_ratio = (missing_count / len(filtered_df)) * 100
+    dtypes = filtered_df.dtypes.astype(str)
+
+    # 2. 결측치 요약 데이터프레임 생성
+    missing_df = pd.DataFrame({
+        "컬럼명": filtered_df.columns,
+        "데이터 타입": dtypes.values,
+        "결측치 개수": missing_count.values,
+        "결측치 비율(%)": missing_ratio.round(2).values
+    })
+
+    # 3. 요약 지표 표시 및 표 출력
+    total_missing = missing_count.sum()
+    if total_missing == 0:
+        st.success("✅ 현재 필터링된 데이터에 결측치가 존재하지 않습니다.")
+    else:
+        st.warning(f"⚠️ 총 {total_missing:,}개의 결측치가 발견되었습니다.")
+
+    st.dataframe(missing_df, use_container_width=True)
+else:
+    st.info("데이터가 비어 있어 결측치를 계산할 수 없습니다.")
+
+st.divider()
+
+# 상세 데이터 테이블
+st.subheader("📋 필터링된 데이터 상세")
+st.dataframe(filtered_df, use_container_width=True)
