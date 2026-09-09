@@ -1,5 +1,4 @@
 # Auto detect text files and perform LF normalization
-text=auto
 
 import streamlit as st
 import pandas as pd
