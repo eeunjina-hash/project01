@@ -19,6 +19,122 @@ st.set_page_config(
     layout="wide"
 )
 
+# [디자인 차별화] 고해상도 프리미엄 CSS 주입
+st.markdown("""
+<style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    
+    * {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif !important;
+    }
+
+    /* 배경 및 전체 톤 */
+    .stApp {
+        background-color: #F8FAFC;
+    }
+
+    /* 사이드바 스타일링 */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%);
+        border-right: 1px solid #E2E8F0;
+        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 상단 배너 카드 */
+    .hero-banner {
+        background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+        color: white;
+        padding: 24px 30px;
+        border-radius: 18px;
+        margin-bottom: 24px;
+        box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.3);
+    }
+    .hero-banner h1 {
+        color: white !important;
+        font-weight: 800;
+        font-size: 26px;
+        margin: 0 0 6px 0;
+    }
+    .hero-banner p {
+        color: #BFDBFE;
+        font-size: 14px;
+        margin: 0;
+    }
+
+    /* 상단 지표 카드 (보딩패스 감성 카드) */
+    .stat-card {
+        background: white;
+        padding: 18px 20px;
+        border-radius: 16px;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        height: 100%;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+    }
+    .stat-label {
+        color: #64748B;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+    }
+    .stat-val {
+        color: #0F172A;
+        font-size: 22px;
+        font-weight: 800;
+        margin-bottom: 4px;
+    }
+    .stat-sub {
+        color: #0EA5E9;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    /* 탭 스타일링 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #E2E8F0;
+        padding: 6px;
+        border-radius: 12px;
+        border-bottom: none;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px;
+        padding: 8px 18px;
+        font-weight: 600;
+        color: #475569;
+        background-color: transparent;
+        border: none !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: white !important;
+        color: #1E3A8A !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    /* 버튼 모던 라운딩 */
+    div.stButton > button {
+        border-radius: 10px;
+        font-weight: 600;
+        border: none;
+        transition: all 0.2s;
+    }
+    div.stButton > button:hover {
+        opacity: 0.92;
+        transform: scale(0.99);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# 로컬 환경용 .env 로드
 current_dir = Path(__file__).resolve().parent
 parent_env_path = current_dir.parent / '.env'
 if parent_env_path.exists():
@@ -43,7 +159,6 @@ EXCHANGE_KEY = get_env_or_secret("EXCHANGERATE_API_KEY")
 # 2. 위치 및 시차/골든타임 엔진
 # ==========================================
 
-# (1) 해외 전용 글로벌 지오코딩
 def search_overseas_place(query):
     clean_query = unicodedata.normalize('NFKC', query).strip()
     overseas_dict = {
@@ -61,7 +176,7 @@ def search_overseas_place(query):
 
     try:
         url = "https://nominatim.openstreetmap.org/search"
-        headers = {"User-Agent": "GlobalTravelPro/3.5 (traveler-contact: student@travelapp.com)"}
+        headers = {"User-Agent": "GlobalTravelProUI/4.0 (traveler-contact: student@travelapp.com)"}
         params = {"q": search_term, "format": "json", "limit": 1, "accept-language": "ko,en"}
         res = requests.get(url, headers=headers, params=params, timeout=5)
         if res.status_code == 200 and res.json():
@@ -75,7 +190,6 @@ def search_overseas_place(query):
         pass
     return None, None, None, None, None
 
-# (2) 국내 전용 카카오 검색
 def search_korea_place(query, kakao_key):
     if not kakao_key:
         return None, None, None, None, None
@@ -98,10 +212,8 @@ def search_korea_place(query, kakao_key):
             return float(doc["y"]), float(doc["x"]), doc["address_name"], doc["address_name"], "KR"
     except Exception:
         pass
-
     return None, None, None, None, None
 
-# (3) 카카오 주변 편의시설 (국내 전용)
 def search_category_places(lat, lng, category_code, api_key, radius=1500, size=5):
     if not api_key:
         return []
@@ -116,39 +228,25 @@ def search_category_places(lat, lng, category_code, api_key, radius=1500, size=5
         pass
     return []
 
-# (4) 현지 타임존, 일몰(골든타임), 시차 정보 조회
 def get_local_time_and_sun(lat, lon):
     try:
         url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": lat,
-            "longitude": lon,
-            "daily": "sunrise,sunset",
-            "timezone": "auto"
-        }
+        params = {"latitude": lat, "longitude": lon, "daily": "sunrise,sunset", "timezone": "auto"}
         res = requests.get(url, params=params, timeout=4)
         if res.status_code == 200:
             data = res.json()
             tz_name = data.get("timezone", "UTC")
             tz = zoneinfo.ZoneInfo(tz_name)
-            
-            # 현지 시각 및 한국과의 시차
             local_now = datetime.now(tz)
             kr_now = datetime.now(zoneinfo.ZoneInfo("Asia/Seoul"))
             diff_hours = int((local_now.utcoffset().total_seconds() - kr_now.utcoffset().total_seconds()) / 3600)
-            
-            diff_str = "한국과 동일" if diff_hours == 0 else (f"한국보다 {diff_hours}시간 빠름" if diff_hours > 0 else f"한국보다 {abs(diff_hours)}시간 느림")
-            
-            sunrise = data["daily"]["sunrise"][0].split("T")[1]
-            sunset = data["daily"]["sunset"][0].split("T")[1]
-            
+            diff_str = "한국과 동일" if diff_hours == 0 else (f"한국보다 +{diff_hours}시간" if diff_hours > 0 else f"한국보다 {diff_hours}시간")
             return {
                 "local_time": local_now.strftime("%H:%M"),
                 "local_date": local_now.strftime("%m월 %d일"),
                 "time_diff": diff_str,
-                "sunrise": sunrise,
-                "sunset": sunset,
-                "tz": tz_name
+                "sunrise": data["daily"]["sunrise"][0].split("T")[1],
+                "sunset": data["daily"]["sunset"][0].split("T")[1]
             }
     except Exception:
         pass
@@ -160,12 +258,12 @@ def get_local_time_and_sun(lat, lon):
 
 def interpret_wmo_code(code):
     mapping = {
-        0: "맑음", 1: "대체로 맑음", 2: "구름 조금", 3: "흐림",
-        45: "안개", 48: "서리 안개", 51: "이슬비", 53: "약한 비", 55: "보통 비",
-        61: "약한 비", 63: "보통 비", 65: "강한 비", 71: "약한 눈", 73: "보통 눈", 75: "강한 눈",
-        80: "소나기", 95: "뇌우"
+        0: "맑음 ☀️", 1: "대체로 맑음 🌤️", 2: "구름 조금 ⛅", 3: "흐림 ☁️",
+        45: "안개 🌫️", 48: "서리 안개 🌫️", 51: "이슬비 🌦️", 53: "약한 비 🌧️", 55: "보통 비 🌧️",
+        61: "약한 비 🌧️", 63: "보통 비 🌧️", 65: "강한 비 ⛈️", 71: "약한 눈 🌨️", 73: "보통 눈 ❄️", 75: "강한 눈 ❄️",
+        80: "소나기 🌦️", 95: "뇌우 ⚡"
     }
-    return mapping.get(code, "온흐림")
+    return mapping.get(code, "흐림 ☁️")
 
 def get_weather_data(lat, lon, api_key):
     if api_key:
@@ -198,7 +296,6 @@ def get_weather_data(lat, lon, api_key):
             feels = round(hourly.get("apparent_temperature", [temp])[0], 1)
             humidity = hourly.get("relativehumidity_2m", [60])[0]
             w_desc = interpret_wmo_code(curr.get("weathercode", 0))
-
             return {
                 "temp": temp,
                 "feels_like": feels,
@@ -218,9 +315,8 @@ def get_weather_forecast(lat, lon, api_key):
             params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric", "lang": "kr"}
             res = requests.get(url, params=params, timeout=4)
             if res.status_code == 200:
-                list_data = res.json().get("list", [])
                 records = []
-                for item in list_data:
+                for item in res.json().get("list", []):
                     records.append({
                         "시간": item["dt_txt"][5:16],
                         "기온(°C)": round(item["main"]["temp"], 1),
@@ -276,39 +372,45 @@ def get_exchange_rates(base_currency="KRW", api_key=None):
 # 4. 사이드바 구성
 # ==========================================
 with st.sidebar:
-    st.header("🧳 스마트 여행 콘솔")
+    st.markdown("<h2 style='font-size:20px; font-weight:800; color:#1E293B;'>✈️ 여행 탐색 콘솔</h2>", unsafe_allow_html=True)
     
-    st.subheader("📍 목적지 선택")
-    travel_mode = st.radio("여행지 구분", options=["해외 여행 🌐", "국내 여행 🇰🇷"], index=0)
+    travel_mode = st.radio("여행지 권역", options=["해외 여행 🌐", "국내 여행 🇰🇷"], index=0)
     
     default_val = "도쿄역" if "해외" in travel_mode else "송내역"
-    destination_input = st.text_input("목적지를 입력하세요", value=default_val)
+    destination_input = st.text_input("목적지 검색", value=default_val)
     
     st.markdown("---")
-    st.subheader("💵 실시간 환율 계산기")
+    st.markdown("<h3 style='font-size:16px; font-weight:700; color:#1E293B;'>💵 실시간 환율 계산기</h3>", unsafe_allow_html=True)
     rates = get_exchange_rates("KRW", EXCHANGE_KEY)
     
     target_currency = "JPY"
     if rates:
-        target_currency = st.selectbox(
-            "목표 통화",
-            options=["JPY", "USD", "EUR", "CNY", "VND", "THB", "TWD", "GBP"],
-            index=0
-        )
+        target_currency = st.selectbox("목표 통화", options=["JPY", "USD", "EUR", "CNY", "VND", "THB", "TWD", "GBP"], index=0)
         krw_amount = st.number_input("금액 (KRW 원)", min_value=1000, value=100000, step=10000)
         rate = rates.get(target_currency, 0)
         if rate > 0:
             converted = krw_amount * rate
-            st.metric(label=f"환전 예상액 ({target_currency})", value=f"{converted:,.2f} {target_currency}")
             base_rate = 1 / rate
             unit = 100 if target_currency in ["JPY", "VND"] else 1
-            st.caption(f"기준 환율: {unit}{target_currency} = {base_rate * unit:,.2f}원")
+            st.markdown(f"""
+            <div style='background:#F8FAFC; border:1px solid #CBD5E1; border-radius:12px; padding:12px; margin-top:10px;'>
+                <div style='font-size:12px; color:#64748B;'>환전 예상액</div>
+                <div style='font-size:20px; font-weight:800; color:#0284C7;'>{converted:,.2f} {target_currency}</div>
+                <div style='font-size:11px; color:#94A3B8; margin-top:4px;'>기준 환율: {unit}{target_currency} = {base_rate * unit:,.2f}원</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # ==========================================
 # 5. 메인 대시보드 화면
 # ==========================================
-st.title("🌍 스마트 여행 올인원 플래너 PRO")
-st.caption("글로벌 지도 탐색 · 시차 & 일몰 골든타임 · 날씨 기반 AI 스마트 패킹 · 환율 연동 가계부")
+
+# 상단 프리미엄 헤더 배너
+st.markdown("""
+<div class="hero-banner">
+    <h1>🌍 SMART TRAVEL PLANNER PRO</h1>
+    <p>전 세계 지도 탐색 · 실시간 시차 & 골든타임 · AI 스마트 팩커 · 환율 연동 여행 가계부</p>
+</div>
+""", unsafe_allow_html=True)
 
 if "해외" in travel_mode:
     lat, lng, place_name, addr_name, location_type = search_overseas_place(destination_input)
@@ -316,36 +418,77 @@ else:
     lat, lng, place_name, addr_name, location_type = search_korea_place(destination_input, KAKAO_KEY)
 
 if not lat or not lng:
-    st.error(f"'{destination_input}'의 위치를 찾을 수 없습니다. 다시 검색해 보세요.")
+    st.error(f"'{destination_input}'의 위치 정보를 찾을 수 없습니다. 영문 표기나 정확한 명칭으로 다시 검색해 보세요.")
     st.stop()
 
 weather = get_weather_data(lat, lng, WEATHER_KEY)
 sun_info = get_local_time_and_sun(lat, lng)
 
-# [차별화] 상단 4개 지표 카드
+# [디자인 차별화] 보딩패스 감성의 모던 카드 4분할
 col1, col2, col3, col4 = st.columns(4)
+
 with col1:
-    region_tag = " [국내]" if location_type == "KR" else " [해외]"
-    st.metric(label="선택 목적지", value=f"{place_name}{region_tag}")
+    region_tag = "국내 여행" if location_type == "KR" else "해외 여행"
+    badge_bg = "#DCFCE7" if location_type == "KR" else "#E0F2FE"
+    badge_color = "#15803D" if location_type == "KR" else "#0369A1"
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-label">SELECTED DESTINATION</div>
+        <div class="stat-val">{place_name}</div>
+        <div style="margin-top: 2px;">
+            <span style="background:{badge_bg}; color:{badge_color}; font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px;">{region_tag}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col2:
     if sun_info:
-        st.metric(label=f"현지 현재 시각 ({sun_info['local_date']})", value=sun_info['local_time'], delta=sun_info['time_diff'])
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">LOCAL TIME ({sun_info['local_date']})</div>
+            <div class="stat-val" style="color:#2563EB;">{sun_info['local_time']}</div>
+            <div class="stat-sub">⏱️ {sun_info['time_diff']}</div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.metric(label="현지 시각", value="시간 동기화 중")
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-label">LOCAL TIME</div>
+            <div class="stat-val">동기화 중</div>
+        </div>
+        """, unsafe_allow_html=True)
+
 with col3:
     if sun_info:
-        st.metric(label="🌅 오늘의 일몰 (선셋/야경 골든타임)", value=sun_info['sunset'], delta=f"일출: {sun_info['sunrise']}")
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">GOLDEN HOUR (야경/선셋)</div>
+            <div class="stat-val" style="color:#D97706;">🌅 {sun_info['sunset']}</div>
+            <div class="stat-sub" style="color:#94A3B8;">일출 시각: {sun_info['sunrise']}</div>
+        </div>
+        """, unsafe_allow_html=True)
     elif weather:
-        st.metric(label="현재 기온", value=f"{weather['temp']}°C", delta=f"체감 {weather['feels_like']}°C")
-    else:
-        st.metric(label="현재 기온", value="조회 불가")
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">WEATHER</div>
+            <div class="stat-val">{weather['temp']}°C</div>
+            <div class="stat-sub">{weather['desc']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
 with col4:
     if rates and target_currency in rates:
         current_rate = 1 / rates.get(target_currency, 1)
         unit = 100 if target_currency in ["JPY", "VND"] else 1
-        st.metric(label=f"{target_currency} 환율 ({unit}{target_currency})", value=f"{current_rate * unit:,.1f}원")
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">EXCHANGE RATE ({unit}{target_currency})</div>
+            <div class="stat-val" style="color:#059669;">{current_rate * unit:,.1f}원</div>
+            <div class="stat-sub" style="color:#94A3B8;">1시간 자동 갱신</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-st.markdown("---")
+st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
 
 tab_map, tab_weather, tab_ledger, tab_checklist = st.tabs([
     "🗺️ 지도 & 핫플 탐색", 
@@ -355,12 +498,12 @@ tab_map, tab_weather, tab_ledger, tab_checklist = st.tabs([
 ])
 
 # ----------------------------------------------------
-# TAB 1: 지도 및 핫플
+# TAB 1: 지도 및 핫플 탐색
 # ----------------------------------------------------
 with tab_map:
     col_addr, col_btn = st.columns([3, 1])
     with col_addr:
-        st.markdown(f"**상세 주소:** {addr_name}")
+        st.markdown(f"**📍 상세 주소:** `{addr_name}`")
         st.caption(f"좌표: 위도 {lat:.4f}, 경도 {lng:.4f}")
     with col_btn:
         if location_type == "KR":
@@ -424,10 +567,10 @@ with tab_weather:
     if weather:
         w1, w2 = st.columns([1, 2])
         with w1:
-            st.image(weather['icon'], width=130)
-            st.subheader(weather['desc'].capitalize())
+            st.image(weather['icon'], width=120)
+            st.subheader(weather['desc'])
         with w2:
-            st.write(f"- **현재 기온:** {weather['temp']}°C (체감: {weather['feels_like']}°C)")
+            st.write(f"- **현재 기온:** **{weather['temp']}°C** (체감: {weather['feels_like']}°C)")
             st.write(f"- **습도:** {weather['humidity']}% | **풍속:** {weather['wind']} m/s")
             
             if weather['temp'] >= 27:
@@ -440,7 +583,7 @@ with tab_weather:
                 outfit = "코트, 가죽 자켓, 니트, 히트텍"
             else:
                 outfit = "패딩, 목도리, 장갑, 방한 의류"
-            st.info(f"💡 **추천 옷차림:** {outfit}")
+            st.info(f"💡 **스타일링 추천 옷차림:** {outfit}")
 
         st.markdown("---")
         st.subheader("📈 향후 5일간 기온 추이 예보")
@@ -454,22 +597,21 @@ with tab_weather:
         st.info("날씨 데이터를 불러오는 중입니다.")
 
 # ----------------------------------------------------
-# TAB 3: [차별화 기능] 실시간 환율 여행 가계부
+# TAB 3: 실시간 환율 여행 가계부
 # ----------------------------------------------------
 with tab_ledger:
     st.subheader(f"💳 현지 지출 기록부 ({target_currency} ➔ KRW 자동 환산)")
     
     if "expenses" not in st.session_state:
         st.session_state.expenses = [
-            {"항목": "공항 고속철도 티켓", "현지통화": target_currency, "금액": 3000.0, "결제수단": "트래블카드"},
+            {"항목": "고속철도 티켓", "현지통화": target_currency, "금액": 3000.0, "결제수단": "트래블카드"},
             {"항목": "편의점 간식 & 음료", "현지통화": target_currency, "금액": 850.0, "결제수단": "현금"}
         ]
     
-    # 지출 추가 폼
     with st.form("expense_form", clear_on_submit=True):
         f_col1, f_col2, f_col3, f_col4 = st.columns([3, 2, 2, 1])
         with f_col1:
-            e_item = st.text_input("지출 항목", placeholder="예: 시부야 스카이 입장권, 스시 오마카세")
+            e_item = st.text_input("지출 항목", placeholder="예: 시부야 스카이, 스시 오마카세")
         with f_col2:
             e_amount = st.number_input(f"금액 ({target_currency})", min_value=0.0, step=100.0)
         with f_col3:
@@ -489,7 +631,6 @@ with tab_ledger:
 
     if st.session_state.expenses:
         exp_df = pd.DataFrame(st.session_state.expenses)
-        # 현재 환율로 원화 금액 환산 열 추가
         rate_val = 1 / rates.get(target_currency, 1) if rates else 1
         exp_df["원화 환산액(KRW)"] = (exp_df["금액"] * rate_val).round(-1).astype(int)
         
@@ -513,13 +654,13 @@ with tab_ledger:
         st.caption("아직 기록된 지출 내역이 없습니다. 위 입력창에서 추가해 보세요.")
 
 # ----------------------------------------------------
-# TAB 4: [차별화 기능] AI 맞춤 짐싸기 & 리포트 내보내기
+# TAB 4: AI 짐싸기 & 리포트 내보내기
 # ----------------------------------------------------
 with tab_checklist:
     col_check, col_memo = st.columns(2)
     
     with col_check:
-        st.subheader("🎒 AI 맞춤 체크리스트")
+        st.subheader("🎒 AI 스마트 체크리스트")
         
         if "checklist" not in st.session_state:
             st.session_state.checklist = {
@@ -532,14 +673,13 @@ with tab_checklist:
                 "여행자 보험 가입 여부 체크": False
             }
 
-        # [AI 스마트 팩커] 날씨 기반 원클릭 주입 버튼
-        if st.button("✨ 현재 날씨 기반 필수 준비물 자동 추천 & 주입"):
+        if st.button("✨ 현지 날씨 맞춤 필수 준비물 1초 주입"):
             added_count = 0
             if weather:
                 t = weather['temp']
                 d = weather['desc']
                 if "비" in d or "소나기" in d:
-                    for item in ["3단 접이식 우산", "방수 신발/커버"]:
+                    for item in ["3단 접이식 우산", "방수 슈즈커버"]:
                         if item not in st.session_state.checklist:
                             st.session_state.checklist[item] = False
                             added_count += 1
@@ -557,14 +697,13 @@ with tab_checklist:
                 st.success(f"현지 기온 및 날씨에 맞춘 필수 아이템 {added_count}개가 추가되었습니다!")
                 st.rerun()
             else:
-                st.info("이미 현재 날씨에 적합한 아이템이 모두 포함되어 있습니다.")
+                st.info("이미 현재 날씨에 필요한 아이템이 모두 포함되어 있습니다.")
 
-        # 체크리스트 목록 렌더링
         for item, checked in list(st.session_state.checklist.items()):
             new_val = st.checkbox(item, value=checked, key=f"chk_{item}")
             st.session_state.checklist[item] = new_val
 
-        new_item = st.text_input("직접 준비물 항목 추가", placeholder="예: 비짓재팬 등록, 돼지코 플러그")
+        new_item = st.text_input("직접 준비물 항목 추가", placeholder="예: 비짓재팬 등록, 보조안경")
         if st.button("추가하기"):
             if new_item and new_item not in st.session_state.checklist:
                 st.session_state.checklist[new_item] = False
@@ -573,7 +712,7 @@ with tab_checklist:
     with col_memo:
         st.subheader("📝 일정 메모 & 다운로드")
         if "travel_memo" not in st.session_state:
-            st.session_state.travel_memo = "1일차: 공항 도착 후 호텔 체크인 & 주변 명소 둘러보기\n2일차: 랜드마크 방문 & 야경 골든타임 감상\n예산 메모: 1일 식비 6,000엔 / 교통카드 충전"
+            st.session_state.travel_memo = "1일차: 도착 후 호텔 체크인 & 명소 산책\n2일차: 랜드마크 방문 & 야경 골든타임 감상\n예산 메모: 1일 식비 6,000엔 / 교통카드 충전"
 
         memo_content = st.text_area(
             "자유롭게 여행 계획과 예산을 메모하세요",
@@ -582,11 +721,9 @@ with tab_checklist:
         )
         st.session_state.travel_memo = memo_content
 
-        # [차별화 기능] 오프라인 열람용 전체 여행 리포트 생성 및 다운로드
         st.markdown("---")
         st.subheader("📤 오프라인용 여행 리포트 파일 받기")
         
-        # 다운로드 텍스트 구성
         checked_items = [k for k, v in st.session_state.checklist.items() if v]
         unchecked_items = [k for k, v in st.session_state.checklist.items() if not v]
         
@@ -620,4 +757,4 @@ with tab_checklist:
             mime="text/plain",
             use_container_width=True
         )
-        st.caption("비행기 안이나 현지 와이파이가 안 터질 때 열어볼 수 있도록 텍스트 파일로 저장됩니다.")
+        st.caption("비행기 안이나 오프라인 환경에서 열람할 수 있도록 텍스트 파일로 저장됩니다.")
