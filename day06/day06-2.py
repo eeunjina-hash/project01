@@ -6,98 +6,108 @@ import folium
 from streamlit_folium import st_folium
 from dotenv import load_dotenv
 import pandas as pd
+import unicodedata
+from datetime import datetime
+import zoneinfo
 
 # ==========================================
-# 1. 환경 설정 및 API 키 로드 (로컬 + 클라우드 겸용)
+# 1. 환경 설정 및 API 키 로드
 # ==========================================
 st.set_page_config(
-    page_title="스마트 여행 올인원 플래너",
+    page_title="스마트 여행 올인원 플래너 PRO",
     page_icon="✈️",
     layout="wide"
 )
 
-# 로컬 환경용 .env 로드
 current_dir = Path(__file__).resolve().parent
 parent_env_path = current_dir.parent / '.env'
 if parent_env_path.exists():
     load_dotenv(dotenv_path=parent_env_path)
 
-# [배포 필수] Streamlit Cloud Secrets 우선 조회 후 os.getenv 탐색
-# [수정] secrets 파일이 없어도 에러 없이 .env로 넘어가는 안전 함수
 def get_env_or_secret(key_name):
+    val = os.getenv(key_name)
+    if val:
+        return val
     try:
-        if key_name in st.secrets:
+        if hasattr(st, "secrets") and key_name in st.secrets:
             return st.secrets[key_name]
     except Exception:
-        # secrets.toml 파일이 없는 로컬 환경에서는 예외를 무시하고 통과
         pass
-    return os.getenv(key_name)
+    return None
 
-KAKAO_KEY = get_env_or_secret("KAKAO_REST_API_KEY")
-WEATHER_KEY = get_env_or_secret("OPENWEATHER_API_KEY")
-EXCHANGE_KEY = get_env_or_secret("EXCHANGERATE_API_KEY")
 KAKAO_KEY = get_env_or_secret("KAKAO_REST_API_KEY")
 WEATHER_KEY = get_env_or_secret("OPENWEATHER_API_KEY")
 EXCHANGE_KEY = get_env_or_secret("EXCHANGERATE_API_KEY")
 
 # ==========================================
-# 2. API 연동 함수 정의 (국내 + 해외 하이브리드)
+# 2. 위치 및 시차/골든타임 엔진
 # ==========================================
 
-# (1) 국내/해외 통합 위치 검색 (카카오 1차 -> Nominatim 2차)
-def search_global_place(query, kakao_key):
-    if kakao_key:
-        headers = {"Authorization": f"KakaoAK {kakao_key}"}
-        try:
-            url = "https://dapi.kakao.com/v2/local/search/keyword.json"
-            res = requests.get(url, headers=headers, params={"query": query, "size": 1}, timeout=3)
-            if res.status_code == 200 and res.json().get("documents"):
-                doc = res.json()["documents"][0]
-                return float(doc["y"]), float(doc["x"]), doc["place_name"], doc.get("address_name", ""), "KR"
-            
-            url_addr = "https://dapi.kakao.com/v2/local/search/address.json"
-            res_addr = requests.get(url_addr, headers=headers, params={"query": query, "size": 1}, timeout=3)
-            if res_addr.status_code == 200 and res_addr.json().get("documents"):
-                doc = res_addr.json()["documents"][0]
-                return float(doc["y"]), float(doc["x"]), doc["address_name"], doc["address_name"], "KR"
-        except Exception:
-            pass
+# (1) 해외 전용 글로벌 지오코딩
+def search_overseas_place(query):
+    clean_query = unicodedata.normalize('NFKC', query).strip()
+    overseas_dict = {
+        "도쿄": "Tokyo", "도쿄역": "Tokyo Station", "동경": "Tokyo",
+        "신주쿠": "Shinjuku", "신주쿠역": "Shinjuku Station",
+        "시부야": "Shibuya", "시부야역": "Shibuya Station",
+        "후쿠오카": "Fukuoka", "후쿠오카역": "Hakata Station", "하카타": "Hakata Station", "하카타역": "Hakata Station",
+        "오사카": "Osaka", "오사카역": "Osaka Station", "난바": "Namba Station",
+        "교토": "Kyoto", "교토역": "Kyoto Station",
+        "삿포로": "Sapporo", "삿포로역": "Sapporo Station", "나고야": "Nagoya", "오키나와": "Okinawa",
+        "파리": "Paris", "런던": "London", "로마": "Rome", "뉴욕": "New York",
+        "방콕": "Bangkok", "다낭": "Da Nang", "타이베이": "Taipei"
+    }
+    search_term = overseas_dict.get(clean_query, clean_query)
 
     try:
-        nom_url = "https://nominatim.openstreetmap.org/search"
-        nom_headers = {"User-Agent": "MyTravelPlannerApp/1.0"}
-        nom_params = {
-            "q": query,
-            "format": "json",
-            "limit": 1,
-            "accept-language": "ko,en"
-        }
-        nom_res = requests.get(nom_url, headers=nom_headers, params=nom_params, timeout=5)
-        if nom_res.status_code == 200 and nom_res.json():
-            doc = nom_res.json()[0]
-            lat = float(doc["lat"])
-            lng = float(doc["lon"])
-            full_name = doc.get("display_name", "")
-            short_name = full_name.split(",")[0].strip()
-            return lat, lng, short_name, full_name, "GLOBAL"
+        url = "https://nominatim.openstreetmap.org/search"
+        headers = {"User-Agent": "GlobalTravelPro/3.5 (traveler-contact: student@travelapp.com)"}
+        params = {"q": search_term, "format": "json", "limit": 1, "accept-language": "ko,en"}
+        res = requests.get(url, headers=headers, params=params, timeout=5)
+        if res.status_code == 200 and res.json():
+            item = res.json()[0]
+            lat = float(item["lat"])
+            lng = float(item["lon"])
+            full_addr = item.get("display_name", "")
+            short_name = full_addr.split(",")[0].strip()
+            return lat, lng, short_name, full_addr, "GLOBAL"
+    except Exception:
+        pass
+    return None, None, None, None, None
+
+# (2) 국내 전용 카카오 검색
+def search_korea_place(query, kakao_key):
+    if not kakao_key:
+        return None, None, None, None, None
+    clean_query = query.strip()
+    headers = {"Authorization": f"KakaoAK {kakao_key}"}
+    try:
+        url = "https://dapi.kakao.com/v2/local/search/keyword.json"
+        res = requests.get(url, headers=headers, params={"query": clean_query, "size": 1}, timeout=3)
+        if res.status_code == 200 and res.json().get("documents"):
+            doc = res.json()["documents"][0]
+            return float(doc["y"]), float(doc["x"]), doc["place_name"], doc.get("address_name", ""), "KR"
+    except Exception:
+        pass
+
+    try:
+        url_addr = "https://dapi.kakao.com/v2/local/search/address.json"
+        res_addr = requests.get(url_addr, headers=headers, params={"query": clean_query, "size": 1}, timeout=3)
+        if res_addr.status_code == 200 and res_addr.json().get("documents"):
+            doc = res_addr.json()["documents"][0]
+            return float(doc["y"]), float(doc["x"]), doc["address_name"], doc["address_name"], "KR"
     except Exception:
         pass
 
     return None, None, None, None, None
 
-# (2) 카카오 REST API: 카테고리별 주변 시설 검색 (국내 전용)
+# (3) 카카오 주변 편의시설 (국내 전용)
 def search_category_places(lat, lng, category_code, api_key, radius=1500, size=5):
     if not api_key:
         return []
     url = "https://dapi.kakao.com/v2/local/search/category.json"
     headers = {"Authorization": f"KakaoAK {api_key}"}
-    params = {
-        "category_group_code": category_code,
-        "x": str(lng),
-        "y": str(lat),
-        "radius": radius,
-        "size": size
-    }
+    params = {"category_group_code": category_code, "x": str(lng), "y": str(lat), "radius": radius, "size": size}
     try:
         res = requests.get(url, headers=headers, params=params, timeout=3)
         if res.status_code == 200:
@@ -106,63 +116,141 @@ def search_category_places(lat, lng, category_code, api_key, radius=1500, size=5
         pass
     return []
 
-# (3) OpenWeatherMap API: 현재 날씨 조회
-def get_weather_data(lat, lon, api_key):
-    if not api_key:
-        return None
-    url = "https://api.openweathermap.org/data/2.5/weather"
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": api_key,
-        "units": "metric",
-        "lang": "kr"
-    }
+# (4) 현지 타임존, 일몰(골든타임), 시차 정보 조회
+def get_local_time_and_sun(lat, lon):
     try:
-        res = requests.get(url, params=params, timeout=5)
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "sunrise,sunset",
+            "timezone": "auto"
+        }
+        res = requests.get(url, params=params, timeout=4)
         if res.status_code == 200:
             data = res.json()
+            tz_name = data.get("timezone", "UTC")
+            tz = zoneinfo.ZoneInfo(tz_name)
+            
+            # 현지 시각 및 한국과의 시차
+            local_now = datetime.now(tz)
+            kr_now = datetime.now(zoneinfo.ZoneInfo("Asia/Seoul"))
+            diff_hours = int((local_now.utcoffset().total_seconds() - kr_now.utcoffset().total_seconds()) / 3600)
+            
+            diff_str = "한국과 동일" if diff_hours == 0 else (f"한국보다 {diff_hours}시간 빠름" if diff_hours > 0 else f"한국보다 {abs(diff_hours)}시간 느림")
+            
+            sunrise = data["daily"]["sunrise"][0].split("T")[1]
+            sunset = data["daily"]["sunset"][0].split("T")[1]
+            
             return {
-                "temp": round(data["main"]["temp"], 1),
-                "feels_like": round(data["main"]["feels_like"], 1),
-                "humidity": data["main"]["humidity"],
-                "desc": data["weather"][0]["description"],
-                "icon": data["weather"][0]["icon"],
-                "wind": data["wind"]["speed"]
+                "local_time": local_now.strftime("%H:%M"),
+                "local_date": local_now.strftime("%m월 %d일"),
+                "time_diff": diff_str,
+                "sunrise": sunrise,
+                "sunset": sunset,
+                "tz": tz_name
             }
     except Exception:
         pass
     return None
 
-# (4) OpenWeatherMap API: 5일간 예보 데이터 수집
-def get_weather_forecast(lat, lon, api_key):
-    if not api_key:
-        return None
-    url = "https://api.openweathermap.org/data/2.5/forecast"
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": api_key,
-        "units": "metric",
-        "lang": "kr"
+# ==========================================
+# 3. 날씨 및 환율 엔진
+# ==========================================
+
+def interpret_wmo_code(code):
+    mapping = {
+        0: "맑음", 1: "대체로 맑음", 2: "구름 조금", 3: "흐림",
+        45: "안개", 48: "서리 안개", 51: "이슬비", 53: "약한 비", 55: "보통 비",
+        61: "약한 비", 63: "보통 비", 65: "강한 비", 71: "약한 눈", 73: "보통 눈", 75: "강한 눈",
+        80: "소나기", 95: "뇌우"
     }
+    return mapping.get(code, "온흐림")
+
+def get_weather_data(lat, lon, api_key):
+    if api_key:
+        try:
+            url = "https://api.openweathermap.org/data/2.5/weather"
+            params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric", "lang": "kr"}
+            res = requests.get(url, params=params, timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                return {
+                    "temp": round(data["main"]["temp"], 1),
+                    "feels_like": round(data["main"]["feels_like"], 1),
+                    "humidity": data["main"]["humidity"],
+                    "desc": data["weather"][0]["description"],
+                    "icon": f"https://openweathermap.org/img/wn/{data['weather'][0]['icon']}@4x.png",
+                    "wind": data["wind"]["speed"]
+                }
+        except Exception:
+            pass
+
     try:
-        res = requests.get(url, params=params, timeout=5)
+        meteo_url = "https://api.open-meteo.com/v1/forecast"
+        m_params = {"latitude": lat, "longitude": lon, "current_weather": True, "hourly": "relativehumidity_2m,apparent_temperature"}
+        res = requests.get(meteo_url, params=m_params, timeout=5)
         if res.status_code == 200:
-            list_data = res.json().get("list", [])
+            m_data = res.json()
+            curr = m_data.get("current_weather", {})
+            hourly = m_data.get("hourly", {})
+            temp = round(curr.get("temperature", 20.0), 1)
+            feels = round(hourly.get("apparent_temperature", [temp])[0], 1)
+            humidity = hourly.get("relativehumidity_2m", [60])[0]
+            w_desc = interpret_wmo_code(curr.get("weathercode", 0))
+
+            return {
+                "temp": temp,
+                "feels_like": feels,
+                "humidity": humidity,
+                "desc": w_desc,
+                "icon": "https://openweathermap.org/img/wn/02d@4x.png",
+                "wind": curr.get("windspeed", 2.0)
+            }
+    except Exception:
+        pass
+    return None
+
+def get_weather_forecast(lat, lon, api_key):
+    if api_key:
+        try:
+            url = "https://api.openweathermap.org/data/2.5/forecast"
+            params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric", "lang": "kr"}
+            res = requests.get(url, params=params, timeout=4)
+            if res.status_code == 200:
+                list_data = res.json().get("list", [])
+                records = []
+                for item in list_data:
+                    records.append({
+                        "시간": item["dt_txt"][5:16],
+                        "기온(°C)": round(item["main"]["temp"], 1),
+                        "날씨": item["weather"][0]["description"]
+                    })
+                return pd.DataFrame(records)
+        except Exception:
+            pass
+
+    try:
+        meteo_url = "https://api.open-meteo.com/v1/forecast"
+        m_params = {"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weathercode", "forecast_days": 5}
+        res = requests.get(meteo_url, params=m_params, timeout=5)
+        if res.status_code == 200:
+            m_data = res.json().get("hourly", {})
+            times = m_data.get("time", [])
+            temps = m_data.get("temperature_2m", [])
+            codes = m_data.get("weathercode", [])
             records = []
-            for item in list_data:
+            for i in range(0, len(times), 3):
                 records.append({
-                    "시간": item["dt_txt"][5:16],
-                    "기온(°C)": round(item["main"]["temp"], 1),
-                    "날씨": item["weather"][0]["description"]
+                    "시간": times[i][5:16].replace("T", " "),
+                    "기온(°C)": round(temps[i], 1),
+                    "날씨": interpret_wmo_code(codes[i])
                 })
             return pd.DataFrame(records)
     except Exception:
         pass
     return None
 
-# (5) 실시간 환율 조회
 @st.cache_data(ttl=3600)
 def get_exchange_rates(base_currency="KRW", api_key=None):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -172,8 +260,6 @@ def get_exchange_rates(base_currency="KRW", api_key=None):
             res = requests.get(url, headers=headers, timeout=5)
             if res.status_code == 200 and "conversion_rates" in res.json():
                 return res.json()["conversion_rates"]
-            elif res.status_code == 200 and "rates" in res.json():
-                return res.json()["rates"]
         except Exception:
             pass
 
@@ -184,105 +270,93 @@ def get_exchange_rates(base_currency="KRW", api_key=None):
             return res.json()["rates"]
     except Exception:
         pass
-
-    try:
-        url = f"https://api.frankfurter.dev/v1/latest?from={base_currency}"
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200 and "rates" in res.json():
-            rates = res.json()["rates"]
-            rates[base_currency] = 1.0
-            return rates
-    except Exception:
-        pass
-
     return {}
 
 # ==========================================
-# 3. 사이드바 구성 (여행 설정 & 환율 계산기)
+# 4. 사이드바 구성
 # ==========================================
 with st.sidebar:
-    st.header("🧳 여행 관리 도구")
+    st.header("🧳 스마트 여행 콘솔")
     
-    st.subheader("📍 목적지 검색")
-    destination_input = st.text_input(
-        "국내 또는 해외 여행지를 입력하세요", 
-        value="도쿄 타워"
-    )
+    st.subheader("📍 목적지 선택")
+    travel_mode = st.radio("여행지 구분", options=["해외 여행 🌐", "국내 여행 🇰🇷"], index=0)
+    
+    default_val = "도쿄역" if "해외" in travel_mode else "송내역"
+    destination_input = st.text_input("목적지를 입력하세요", value=default_val)
     
     st.markdown("---")
     st.subheader("💵 실시간 환율 계산기")
-    
     rates = get_exchange_rates("KRW", EXCHANGE_KEY)
     
+    target_currency = "JPY"
     if rates:
         target_currency = st.selectbox(
-            "목표 통화 선택",
-            options=["USD", "JPY", "EUR", "CNY", "VND", "THB", "TWD", "GBP"],
-            index=1
+            "목표 통화",
+            options=["JPY", "USD", "EUR", "CNY", "VND", "THB", "TWD", "GBP"],
+            index=0
         )
-        
         krw_amount = st.number_input("금액 (KRW 원)", min_value=1000, value=100000, step=10000)
-        
         rate = rates.get(target_currency, 0)
         if rate > 0:
             converted = krw_amount * rate
-            st.metric(
-                label=f"환전 환산액 ({target_currency})",
-                value=f"{converted:,.2f} {target_currency}"
-            )
+            st.metric(label=f"환전 예상액 ({target_currency})", value=f"{converted:,.2f} {target_currency}")
             base_rate = 1 / rate
-            if target_currency in ["JPY", "VND"]:
-                st.caption(f"기준 환율: 100{target_currency} = {base_rate * 100:,.2f}원")
-            else:
-                st.caption(f"기준 환율: 1 {target_currency} = {base_rate:,.2f}원")
-    else:
-        st.warning("환율 데이터를 불러오는 중 오류가 발생했습니다.")
+            unit = 100 if target_currency in ["JPY", "VND"] else 1
+            st.caption(f"기준 환율: {unit}{target_currency} = {base_rate * unit:,.2f}원")
 
 # ==========================================
-# 4. 메인 대시보드 화면
+# 5. 메인 대시보드 화면
 # ==========================================
-st.title("🌍 스마트 여행 올인원 플래너")
-st.caption("국내 및 해외 전 세계 지도 탐색, 실시간 날씨 예보 및 환율·준비물 관리 시스템")
+st.title("🌍 스마트 여행 올인원 플래너 PRO")
+st.caption("글로벌 지도 탐색 · 시차 & 일몰 골든타임 · 날씨 기반 AI 스마트 패킹 · 환율 연동 가계부")
 
-lat, lng, place_name, addr_name, location_type = search_global_place(destination_input, KAKAO_KEY)
+if "해외" in travel_mode:
+    lat, lng, place_name, addr_name, location_type = search_overseas_place(destination_input)
+else:
+    lat, lng, place_name, addr_name, location_type = search_korea_place(destination_input, KAKAO_KEY)
 
 if not lat or not lng:
-    st.error(f"'{destination_input}'의 위치 정보를 찾을 수 없습니다. 영문 표기(예: Tokyo Tower, Paris)나 정확한 명칭으로 다시 검색해보세요.")
+    st.error(f"'{destination_input}'의 위치를 찾을 수 없습니다. 다시 검색해 보세요.")
     st.stop()
 
 weather = get_weather_data(lat, lng, WEATHER_KEY)
+sun_info = get_local_time_and_sun(lat, lng)
 
-# 상단 요약 카드
+# [차별화] 상단 4개 지표 카드
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     region_tag = " [국내]" if location_type == "KR" else " [해외]"
     st.metric(label="선택 목적지", value=f"{place_name}{region_tag}")
 with col2:
-    if weather:
+    if sun_info:
+        st.metric(label=f"현지 현재 시각 ({sun_info['local_date']})", value=sun_info['local_time'], delta=sun_info['time_diff'])
+    else:
+        st.metric(label="현지 시각", value="시간 동기화 중")
+with col3:
+    if sun_info:
+        st.metric(label="🌅 오늘의 일몰 (선셋/야경 골든타임)", value=sun_info['sunset'], delta=f"일출: {sun_info['sunrise']}")
+    elif weather:
         st.metric(label="현재 기온", value=f"{weather['temp']}°C", delta=f"체감 {weather['feels_like']}°C")
     else:
-        st.metric(label="현재 기온", value="날씨 키 필요")
-with col3:
-    if weather:
-        st.metric(label="날씨 상태", value=weather['desc'].capitalize())
-    else:
-        st.metric(label="날씨 상태", value="연동 대기")
+        st.metric(label="현재 기온", value="조회 불가")
 with col4:
-    if rates and 'target_currency' in locals():
+    if rates and target_currency in rates:
         current_rate = 1 / rates.get(target_currency, 1)
         unit = 100 if target_currency in ["JPY", "VND"] else 1
         st.metric(label=f"{target_currency} 환율 ({unit}{target_currency})", value=f"{current_rate * unit:,.1f}원")
 
 st.markdown("---")
 
-tab_map, tab_weather, tab_currency, tab_checklist = st.tabs([
+tab_map, tab_weather, tab_ledger, tab_checklist = st.tabs([
     "🗺️ 지도 & 핫플 탐색", 
     "☀️ 날씨 & 5일 예보", 
-    "📊 환율 분석", 
-    "📝 여행 준비물 & 메모"
+    "💰 실시간 환율 여행 가계부", 
+    "🎒 AI 짐싸기 & 리포트 내보내기"
 ])
 
+# ----------------------------------------------------
 # TAB 1: 지도 및 핫플
+# ----------------------------------------------------
 with tab_map:
     col_addr, col_btn = st.columns([3, 1])
     with col_addr:
@@ -310,10 +384,9 @@ with tab_map:
             default=["맛집", "카페"]
         )
     else:
-        st.info("💡 해외 지역은 구글맵 길찾기와 글로벌 Folium 지도 마커를 기본 제공합니다.")
+        st.info("💡 해외 지역은 구글맵 길찾기와 글로벌 Folium 고해상도 지도를 제공합니다.")
 
-    m = folium.Map(location=[lat, lng], zoom_start=14)
-    
+    m = folium.Map(location=[lat, lng], zoom_start=15)
     folium.Marker(
         [lat, lng],
         popup=folium.Popup(f"<b>[목적지] {place_name}</b><br>{addr_name[:40]}...", max_width=250),
@@ -344,20 +417,21 @@ with tab_map:
 
     st_folium(m, width="100%", height=500)
 
+# ----------------------------------------------------
 # TAB 2: 날씨 상세 및 5일 예보
+# ----------------------------------------------------
 with tab_weather:
     if weather:
         w1, w2 = st.columns([1, 2])
         with w1:
-            icon_url = f"https://openweathermap.org/img/wn/{weather['icon']}@4x.png"
-            st.image(icon_url, width=130)
+            st.image(weather['icon'], width=130)
             st.subheader(weather['desc'].capitalize())
         with w2:
             st.write(f"- **현재 기온:** {weather['temp']}°C (체감: {weather['feels_like']}°C)")
             st.write(f"- **습도:** {weather['humidity']}% | **풍속:** {weather['wind']} m/s")
             
             if weather['temp'] >= 27:
-                outfit = "민소매, 반팔, 린넨 옷, 자외선 차단제"
+                outfit = "민소매, 반팔, 린넨 의류, 자외선 차단제"
             elif weather['temp'] >= 20:
                 outfit = "얇은 가디건, 반팔 티셔츠, 면바지"
             elif weather['temp'] >= 12:
@@ -377,63 +451,173 @@ with tab_weather:
             with st.expander("⏱️ 상세 3시간 단위 예보표 보기"):
                 st.dataframe(forecast_df, use_container_width=True)
     else:
-        st.info("`.env` 파일에 `OPENWEATHER_API_KEY`를 등록하면 실시간 날씨 및 5일 예보 차트가 활성화됩니다.")
+        st.info("날씨 데이터를 불러오는 중입니다.")
 
-# TAB 3: 통화 및 환전 팁
-with tab_currency:
-    st.subheader("주요 여행 국가 실시간 환율 비교표")
-    if rates:
-        target_list = ["USD", "JPY", "EUR", "CNY", "VND", "THB", "GBP"]
-        curr_data = []
-        for code in target_list:
-            r = rates.get(code)
-            if r:
-                unit = 100 if code in ["JPY", "VND"] else 1
-                krw_val = (1 / r) * unit
-                curr_data.append({
-                    "통화": code,
-                    "기준 단위": f"{unit} {code}",
-                    "원화 환산 금액 (KRW)": f"{krw_val:,.2f}원"
+# ----------------------------------------------------
+# TAB 3: [차별화 기능] 실시간 환율 여행 가계부
+# ----------------------------------------------------
+with tab_ledger:
+    st.subheader(f"💳 현지 지출 기록부 ({target_currency} ➔ KRW 자동 환산)")
+    
+    if "expenses" not in st.session_state:
+        st.session_state.expenses = [
+            {"항목": "공항 고속철도 티켓", "현지통화": target_currency, "금액": 3000.0, "결제수단": "트래블카드"},
+            {"항목": "편의점 간식 & 음료", "현지통화": target_currency, "금액": 850.0, "결제수단": "현금"}
+        ]
+    
+    # 지출 추가 폼
+    with st.form("expense_form", clear_on_submit=True):
+        f_col1, f_col2, f_col3, f_col4 = st.columns([3, 2, 2, 1])
+        with f_col1:
+            e_item = st.text_input("지출 항목", placeholder="예: 시부야 스카이 입장권, 스시 오마카세")
+        with f_col2:
+            e_amount = st.number_input(f"금액 ({target_currency})", min_value=0.0, step=100.0)
+        with f_col3:
+            e_method = st.selectbox("결제 수단", ["트래블카드", "현금", "신용카드"])
+        with f_col4:
+            st.write("")
+            st.write("")
+            submitted = st.form_submit_button("추가")
+            if submitted and e_item and e_amount > 0:
+                st.session_state.expenses.append({
+                    "항목": e_item,
+                    "현지통화": target_currency,
+                    "금액": float(e_amount),
+                    "결제수단": e_method
                 })
-        st.table(curr_data)
-        st.caption("* 환율 정보는 1시간 주기로 자동 캐싱 및 갱신됩니다.")
+                st.rerun()
 
-# TAB 4: 여행 준비물 체크리스트 & 메모장
+    if st.session_state.expenses:
+        exp_df = pd.DataFrame(st.session_state.expenses)
+        # 현재 환율로 원화 금액 환산 열 추가
+        rate_val = 1 / rates.get(target_currency, 1) if rates else 1
+        exp_df["원화 환산액(KRW)"] = (exp_df["금액"] * rate_val).round(-1).astype(int)
+        
+        st.dataframe(
+            exp_df.style.format({"금액": "{:,.2f}", "원화 환산액(KRW)": "{:,}원"}),
+            use_container_width=True
+        )
+        
+        total_local = exp_df["금액"].sum()
+        total_krw = exp_df["원화 환산액(KRW)"].sum()
+        
+        c_tot1, c_tot2, c_btn = st.columns([2, 2, 1])
+        c_tot1.metric(f"총 지출 합계 ({target_currency})", f"{total_local:,.2f} {target_currency}")
+        c_tot2.metric("원화 총 지출 합산", f"{total_krw:,.0f}원")
+        with c_btn:
+            st.write("")
+            if st.button("🗑️ 지출 내역 초기화"):
+                st.session_state.expenses = []
+                st.rerun()
+    else:
+        st.caption("아직 기록된 지출 내역이 없습니다. 위 입력창에서 추가해 보세요.")
+
+# ----------------------------------------------------
+# TAB 4: [차별화 기능] AI 맞춤 짐싸기 & 리포트 내보내기
+# ----------------------------------------------------
 with tab_checklist:
     col_check, col_memo = st.columns(2)
     
     with col_check:
-        st.subheader("✅ 여행 필수 준비물 체크리스트")
+        st.subheader("🎒 AI 맞춤 체크리스트")
+        
         if "checklist" not in st.session_state:
             st.session_state.checklist = {
                 "여권 및 신분증 지참": True,
                 "비행기/열차 E-티켓 발권 확인": False,
                 "현지 통화 환전 또는 트래블카드 준비": False,
-                "보조배터리 및 국가별 110V/220V 어댑터": False,
+                "보조배터리 및 110V/220V 어댑터": False,
                 "상비약 (감기약, 소화제, 진통제)": False,
                 "해외 로밍 / eSIM / 유심 구매 확인": False,
                 "여행자 보험 가입 여부 체크": False
             }
-            
+
+        # [AI 스마트 팩커] 날씨 기반 원클릭 주입 버튼
+        if st.button("✨ 현재 날씨 기반 필수 준비물 자동 추천 & 주입"):
+            added_count = 0
+            if weather:
+                t = weather['temp']
+                d = weather['desc']
+                if "비" in d or "소나기" in d:
+                    for item in ["3단 접이식 우산", "방수 신발/커버"]:
+                        if item not in st.session_state.checklist:
+                            st.session_state.checklist[item] = False
+                            added_count += 1
+                if t <= 12:
+                    for item in ["핫팩 세트", "목도리 & 장갑", "보온 내의(히트텍)"]:
+                        if item not in st.session_state.checklist:
+                            st.session_state.checklist[item] = False
+                            added_count += 1
+                elif t >= 25:
+                    for item in ["자외선 차단 선크림", "선글라스", "휴대용 손선풍기"]:
+                        if item not in st.session_state.checklist:
+                            st.session_state.checklist[item] = False
+                            added_count += 1
+            if added_count > 0:
+                st.success(f"현지 기온 및 날씨에 맞춘 필수 아이템 {added_count}개가 추가되었습니다!")
+                st.rerun()
+            else:
+                st.info("이미 현재 날씨에 적합한 아이템이 모두 포함되어 있습니다.")
+
+        # 체크리스트 목록 렌더링
         for item, checked in list(st.session_state.checklist.items()):
             new_val = st.checkbox(item, value=checked, key=f"chk_{item}")
             st.session_state.checklist[item] = new_val
-            
-        new_item = st.text_input("새 준비물 항목 추가", placeholder="예: 비짓재팬 등록, 비옷")
+
+        new_item = st.text_input("직접 준비물 항목 추가", placeholder="예: 비짓재팬 등록, 돼지코 플러그")
         if st.button("추가하기"):
             if new_item and new_item not in st.session_state.checklist:
                 st.session_state.checklist[new_item] = False
                 st.rerun()
 
     with col_memo:
-        st.subheader("📝 여행 일정 & 지출 메모장")
+        st.subheader("📝 일정 메모 & 다운로드")
         if "travel_memo" not in st.session_state:
-            st.session_state.travel_memo = "1일차: 공항 도착 후 호텔 체크인 & 주변 명소 둘러보기\n예산 메모: 1일 식비 5,000엔 / 교통카드 충전"
-            
+            st.session_state.travel_memo = "1일차: 공항 도착 후 호텔 체크인 & 주변 명소 둘러보기\n2일차: 랜드마크 방문 & 야경 골든타임 감상\n예산 메모: 1일 식비 6,000엔 / 교통카드 충전"
+
         memo_content = st.text_area(
-            "자유롭게 여행 계획과 예산을 메모하세요 (새로고침 시에도 유지)",
+            "자유롭게 여행 계획과 예산을 메모하세요",
             value=st.session_state.travel_memo,
-            height=280
+            height=200
         )
         st.session_state.travel_memo = memo_content
-        st.success("메모가 세션에 안전하게 저장되었습니다.")
+
+        # [차별화 기능] 오프라인 열람용 전체 여행 리포트 생성 및 다운로드
+        st.markdown("---")
+        st.subheader("📤 오프라인용 여행 리포트 파일 받기")
+        
+        # 다운로드 텍스트 구성
+        checked_items = [k for k, v in st.session_state.checklist.items() if v]
+        unchecked_items = [k for k, v in st.session_state.checklist.items() if not v]
+        
+        report_text = f"""==================================================
+🌍 스마트 여행 올인원 플래너 여행 리포트
+==================================================
+- 목적지: {place_name} ({addr_name})
+- 현지 좌표: 위도 {lat:.4f}, 경도 {lng:.4f}
+- 현지 일출/일몰: 일출 {sun_info['sunrise'] if sun_info else '-'} / 일몰 {sun_info['sunset'] if sun_info else '-'}
+- 현재 기온: {weather['temp'] if weather else '-'}°C ({weather['desc'] if weather else '-'})
+
+--------------------------------------------------
+[🎒 여행 준비물 체크 현황]
+--------------------------------------------------
+[완료된 항목]
+{chr(10).join(['  - [V] ' + i for i in checked_items]) if checked_items else '  (없음)'}
+
+[챙겨야 할 항목]
+{chr(10).join(['  - [ ] ' + i for i in unchecked_items]) if unchecked_items else '  (모두 챙김!)'}
+
+--------------------------------------------------
+[📝 여행 일정 및 메모]
+--------------------------------------------------
+{st.session_state.travel_memo}
+==================================================
+"""
+        st.download_button(
+            label="💾 여행 플랜 텍스트 파일(.txt) 다운로드",
+            data=report_text,
+            file_name=f"{place_name}_여행플랜.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+        st.caption("비행기 안이나 현지 와이파이가 안 터질 때 열어볼 수 있도록 텍스트 파일로 저장됩니다.")
