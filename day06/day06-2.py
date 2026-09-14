@@ -191,8 +191,50 @@ def search_overseas_place(query):
     return None, None, None, None, None
 
 def search_korea_place(query, kakao_key):
-    if not kakao_key:
-        return None, None, None, None, None
+    clean_query = query.strip()
+    
+    # 1. 카카오 API 키가 유효하게 있으면 카카오 로컬 검색 시도
+    if kakao_key:
+        headers = {"Authorization": f"KakaoAK {kakao_key}"}
+        # 장소명/키워드 검색
+        try:
+            url = "https://dapi.kakao.com/v2/local/search/keyword.json"
+            res = requests.get(url, headers=headers, params={"query": clean_query, "size": 1}, timeout=3)
+            if res.status_code == 200 and res.json().get("documents"):
+                doc = res.json()["documents"][0]
+                return float(doc["y"]), float(doc["x"]), doc["place_name"], doc.get("address_name", ""), "KR"
+        except Exception:
+            pass
+
+        # 지번/도로명 주소 검색
+        try:
+            url_addr = "https://dapi.kakao.com/v2/local/search/address.json"
+            res_addr = requests.get(url_addr, headers=headers, params={"query": clean_query, "size": 1}, timeout=3)
+            if res_addr.status_code == 200 and res_addr.json().get("documents"):
+                doc = res_addr.json()["documents"][0]
+                return float(doc["y"]), float(doc["x"]), doc["address_name"], doc["address_name"], "KR"
+        except Exception:
+            pass
+
+    # 2. 카카오 키가 없거나 카카오 검색에 실패한 경우: OpenStreetMap Nominatim으로 대체 검색
+    try:
+        url_nom = "https://nominatim.openstreetmap.org/search"
+        headers_nom = {"User-Agent": "GlobalTravelProUI/4.0 (traveler-contact: student@travelapp.com)"}
+        params_nom = {"q": clean_query, "format": "json", "limit": 1, "accept-language": "ko,en"}
+        res_nom = requests.get(url_nom, headers=headers_nom, params=params_nom, timeout=4)
+        if res_nom.status_code == 200 and res_nom.json():
+            item = res_nom.json()[0]
+            lat = float(item["lat"])
+            lng = float(item["lon"])
+            full_addr = item.get("display_name", "")
+            short_name = full_addr.split(",")[0].strip()
+            return lat, lng, short_name, full_addr, "KR"
+    except Exception:
+        pass
+
+    return None, None, None, None, None
+
+
     clean_query = query.strip()
     headers = {"Authorization": f"KakaoAK {kakao_key}"}
     try:
